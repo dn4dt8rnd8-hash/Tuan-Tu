@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Roblox Studio Script Helper</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; font: 16px/1.5 system-ui, sans-serif;
+      color: #e8ecf5; background: #10131b;
+    }
+    main { max-width: 1000px; margin: 40px auto; padding: 0 20px; }
+    h1 { margin-bottom: 6px; }
+    .muted, #status { color: #aab4c8; }
+    .card {
+      margin-top: 20px; padding: 20px; border: 1px solid #2b3242;
+      border-radius: 12px; background: #171c27;
+    }
+    label { display: block; margin: 14px 0 6px; font-weight: 600; }
+    textarea, select {
+      width: 100%; color: #f3f5fa; background: #0e121a;
+      border: 1px solid #343d50; border-radius: 8px; padding: 12px;
+      font: 14px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace;
+    }
+    textarea:focus, select:focus { outline: 2px solid #7188ff; }
+    #prompt { min-height: 80px; }
+    #code { min-height: 340px; tab-size: 2; }
+    .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
+    button {
+      border: 0; border-radius: 8px; padding: 10px 14px;
+      color: white; background: #536dfe; font-weight: 650; cursor: pointer;
+    }
+    button.secondary { background: #333c50; }
+    button:disabled { opacity: .6; cursor: wait; }
+    #status { min-height: 24px; margin-top: 12px; }
+    .notice { color: #ffd98a; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Roblox Studio Script Helper</h1>
+    <div class="muted">Tạo và chỉnh sửa Luau cho trải nghiệm Roblox của bạn.</div>
+
+    <section class="card">
+      <label for="template">Mẫu script</label>
+      <select id="template">
+        <option value="">Chọn mẫu…</option>
+        <option value="hello">Script server cơ bản</option>
+        <option value="leaderstats">Bảng điểm leaderstats</option>
+        <option value="touch">Phát hiện người chơi chạm Part</option>
+      </select>
+      <div class="actions">
+        <button class="secondary" id="loadTemplate">Nạp mẫu</button>
+      </div>
+
+      <label for="prompt">Yêu cầu cho AI</label>
+      <textarea id="prompt" placeholder="Ví dụ: Tạo hệ thống leaderstats có Coins, mặc định là 0."></textarea>
+
+      <label for="code">Script Luau</label>
+      <textarea id="code" spellcheck="false" placeholder="Script sẽ xuất hiện ở đây…"></textarea>
+
+      <div class="actions">
+        <button id="generate">AI tạo script</button>
+        <button id="edit">AI sửa script</button>
+        <button class="secondary" id="copy">Sao chép</button>
+        <button class="secondary" id="download">Tải .lua</button>
+      </div>
+      <div id="status" role="status"></div>
+      <p class="notice">
+        Chỉ dùng trong Roblox Studio cho game bạn sở hữu hoặc được phép phát triển.
+        Hãy kiểm tra code trước khi chạy.
+      </p>
+    </section>
+  </main>
+
+  <script>
+    const codeBox = document.querySelector("#code");
+    const promptBox = document.querySelector("#prompt");
+    const statusBox = document.querySelector("#status");
+
+    const templates = {
+      hello: `-- Đặt Script này trong ServerScriptService
+print("Server đã khởi động!")`,
+      leaderstats: `-- Đặt Script này trong ServerScriptService
+game.Players.PlayerAdded:Connect(function(player)
+    local leaderstats = Instance.new("Folder")
+    leaderstats.Name = "leaderstats"
+    leaderstats.Parent = player
+
+    local coins = Instance.new("IntValue")
+    coins.Name = "Coins"
+    coins.Value = 0
+    coins.Parent = leaderstats
+end)`,
+      touch: `-- Đặt Script này bên trong một Part trong Workspace
+local part = script.Parent
+
+part.Touched:Connect(function(hit)
+    local character = hit.Parent
+    local player = game.Players:GetPlayerFromCharacter(character)
+
+    if player then
+        print(player.Name .. " đã chạm vào Part")
+    end
+end)`
+    };
+
+    document.querySelector("#loadTemplate").addEventListener("click", () => {
+      const selected = document.querySelector("#template").value;
+      if (templates[selected]) {
+        codeBox.value = templates[selected];
+        statusBox.textContent = "Đã nạp mẫu. Kiểm tra vị trí đặt script trong Roblox Studio.";
+      }
+    });
+
+    async function askAI(action) {
+      const prompt = promptBox.value.trim();
+      if (!prompt) {
+        statusBox.textContent = "Hãy nhập yêu cầu cho AI trước.";
+        return;
+      }
+      if (action === "edit" && !codeBox.value.trim()) {
+        statusBox.textContent = "Hãy nhập hoặc nạp script cần chỉnh sửa.";
+        return;
+      }
+
+      const buttons = document.querySelectorAll("button");
+      buttons.forEach(button => button.disabled = true);
+      statusBox.textContent = "Đang gửi yêu cầu đến AI…";
+
+      try {
+        const response = await fetch("/api/ai", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action,
+            prompt,
+            code: codeBox.value
+          })
+        });
+        const data = await response.json();
+
+        if (!response.ok) throw new Error(data.error || "Yêu cầu thất bại.");
+        codeBox.value = data.result;
+        statusBox.textContent = "Hoàn tất. Hãy xem lại code trước khi dùng.";
+      } catch (error) {
+        statusBox.textContent = error.message;
+      } finally {
+        buttons.forEach(button => button.disabled = false);
+      }
+    }
+
+    document.querySelector("#generate").addEventListener("click", () => askAI("generate"));
+    document.querySelector("#edit").addEventListener("click", () => askAI("edit"));
+
+    document.querySelector("#copy").addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(codeBox.value);
+        statusBox.textContent = "Đã sao chép script.";
+      } catch {
+        statusBox.textContent = "Không thể sao chép; hãy chọn và copy thủ công.";
+      }
+    });
+
+    document.querySelector("#download").addEventListener("click", () => {
+      const blob = new Blob([codeBox.value], { type: "text/plain;charset=utf-8" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = "roblox-script.lua";
+      link.click();
+      URL.revokeObjectURL(link.href);
+    });
+  </script>
+</body>
+</html>
